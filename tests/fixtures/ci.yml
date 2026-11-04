@@ -1,0 +1,25 @@
+on: [push]
+jobs:
+  route:
+    runs-on: ubuntu-latest
+    steps: [{run: "true"}]
+  bins:
+    runs-on: ubuntu-latest
+    steps: [{run: "true"}]
+  test:
+    needs: bins
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || fromJSON('["self-hosted", "rust-4c-8gb"]') }}
+    strategy:
+      matrix:
+        kotlin: ${{ fromJson(needs.bins.outputs.matrix) }}
+    steps: [{run: "true"}]
+  gate:
+    if: always()
+    needs: [test]
+    runs-on: [self-hosted, helper-1c-1gb]
+    steps: [{run: "true"}]
+  release:
+    if: github.ref == 'refs/heads/main'
+    needs: [gate]
+    runs-on: ubuntu-latest
+    steps: [{run: "true"}]

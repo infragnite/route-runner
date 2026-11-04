@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: unit tests
+        run: python3 -m unittest discover -s tests
+      # Without id-token: write there is no OIDC token: the action must warn and leave every job's
+      # labels alone, never fail the run.
+      - id: route
+        uses: ./
+        with:
+          workflow: tests/fixtures/ci.yml
+          asking: route
+          outputs: bins.matrix=["2.4.0"]
+      - name: the action falls back without a token
+        env:
+          MODE: ${{ steps.route.outputs.mode }}
+          RUNS_ON: ${{ steps.route.outputs.runs-on }}
+        run: |
+          test -z "$MODE"
+          test "$RUNS_ON" = '{}'
