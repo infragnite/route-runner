@@ -92,12 +92,15 @@ def rows(matrix, outputs):
     return keys, combos
 
 
-def job_class(key, job, outputs):
+def job_class(key, job, outputs, asking=None):
     if job.get("if") not in (None, "always()", "${{ always() }}"):
         raise Skip(f"runs only if {job['if']}")
     default = labels(job.get("runs-on"))
     needs = job.get("needs", [])
     needs = [needs] if isinstance(needs, str) else needs
+    # The route job has finished before anything it routes can start, so waiting for it is not
+    # a dependency the router times: a job reading its answer `needs` it and is still placed.
+    needs = [n for n in needs if n != asking]
     matrix = job.get("strategy", {}).get("matrix")
     name = job.get("name", key)
     out = {"key": key, "name": name, "default": default, "hosted": HOSTED, "needs": needs}
@@ -125,7 +128,7 @@ def request(workflow, outputs, asking=None):
         if key == asking:
             continue
         try:
-            classes.append(job_class(key, job, outputs))
+            classes.append(job_class(key, job, outputs, asking))
         except Skip as e:
             print(f"route: {key} keeps its runs-on: {e}", file=sys.stderr)
     # A job that waits for one left out cannot be timed either.
