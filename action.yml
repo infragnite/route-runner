@@ -10,8 +10,14 @@ inputs:
     description: Workflow file whose jobs are placed.
     required: true
   asking:
-    description: The route job's own id; it is already running, so it is not placed.
+    description: The asking job's own id; it is already running, so it is not placed.
     required: true
+  only:
+    description: >-
+      Whitespace-separated job ids to ask for, and no others. A gating job asks for its
+      dependents in its last step, so they are placed by the queues as they are when they become
+      ready. Empty asks for every job.
+    default: ''
   outputs:
     description: Newline-separated JOB.OUTPUT=JSON values a matrix is built from.
     default: ''
@@ -39,6 +45,7 @@ runs:
       env:
         WORKFLOW: ${{ inputs.workflow }}
         ASKING: ${{ inputs.asking }}
+        ONLY: ${{ inputs.only }}
         OUTPUTS: ${{ inputs.outputs }}
         URL: ${{ inputs.url }}
         AUDIENCE: ${{ inputs.audience }}
@@ -52,6 +59,9 @@ runs:
           exit 0
         }
         args=(--asking "$ASKING")
+        for job in $ONLY; do
+          args+=(--only "$job")
+        done
         while IFS= read -r line; do
           [ -n "$line" ] && args+=(--output "$line")
         done <<< "$OUTPUTS"

@@ -11,9 +11,13 @@ starts: a job with an `if:` other than `always()`, a matrix built from an output
 was not given, a matrix value that is not a scalar, or a name or `runs-on:` it cannot read.
 Jobs left out keep their own `runs-on:`.
 
-Usage: route_request.py WORKFLOW --asking JOB [--output JOB.OUTPUT=JSON ...]
+Usage: route_request.py WORKFLOW --asking JOB [--only JOB ...] [--output JOB.OUTPUT=JSON ...]
 
---asking names the route job itself: it is already running, so it is not placed.
+--asking names the job that asks: it is already running, so it is not placed.
+--only asks for those jobs alone. A job that gates others (its dependents start the moment it
+finishes) asks for them in its last step, so they are placed by the queues as they are when they
+become ready, not as they were when the run started. Their needs outside --only have already been
+placed and are not timed again.
 """
 
 import argparse
@@ -92,7 +96,7 @@ def rows(matrix, outputs):
     return keys, combos
 
 
-def job_class(key, job, outputs, asking=None):
+def job_class(key, job, outputs, asking=None, only=None):
     if job.get("if") not in (None, "always()", "${{ always() }}"):
         raise Skip(f"runs only if {job['if']}")
     default = labels(job.get("runs-on"))
@@ -101,6 +105,8 @@ def job_class(key, job, outputs, asking=None):
     # The route job has finished before anything it routes can start, so waiting for it is not
     # a dependency the router times: a job reading its answer `needs` it and is still placed.
     needs = [n for n in needs if n != asking]
+    if only is not None:
+        needs = [n for n in needs if n in only]
     matrix = job.get("strategy", {}).get("matrix")
     name = job.get("name", key)
     out = {"key": key, "name": name, "default": default, "hosted": HOSTED, "needs": needs}
@@ -122,13 +128,17 @@ def job_class(key, job, outputs, asking=None):
     return out
 
 
-def request(workflow, outputs, asking=None):
+def request(workflow, outputs, asking=None, only=None):
     classes = []
+    if only is not None:
+        unknown = [k for k in only if k not in workflow["jobs"]]
+        if unknown:
+            raise SystemExit(f"route: --only names no such job: {', '.join(unknown)}")
     for key, job in workflow["jobs"].items():
-        if key == asking:
+        if key == asking or (only is not None and key not in only):
             continue
         try:
-            classes.append(job_class(key, job, outputs, asking))
+            classes.append(job_class(key, job, outputs, asking, only))
         except Skip as e:
             print(f"route: {key} keeps its runs-on: {e}", file=sys.stderr)
     # A job that waits for one left out cannot be timed either.
@@ -147,6 +157,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("workflow")
     parser.add_argument("--asking", required=True, metavar="JOB")
+    parser.add_argument("--only", action="append", metavar="JOB")
     parser.add_argument("--output", action="append", default=[], metavar="JOB.OUTPUT=JSON")
     args = parser.parse_args()
     outputs = {}
@@ -155,7 +166,7 @@ def main():
         outputs[name] = json.loads(value)
     with open(args.workflow) as f:
         workflow = yaml.safe_load(f)
-    json.dump(request(workflow, outputs, args.asking), sys.stdout)
+    json.dump(request(workflow, outputs, args.asking, args.only), sys.stdout)
     print()
 
 

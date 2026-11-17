@@ -95,6 +95,26 @@ class RouteRequestTest(unittest.TestCase):
             [("lint", ["self-hosted", "rust-4c-8gb"], []), ("gate", ["self-hosted", "rust-4c-8gb"], ["lint"])],
         )
 
+    def test_a_gating_job_asks_only_for_its_dependents(self):
+        reads = "${{ fromJSON(needs.bins.outputs.runs-on).conf || fromJSON('[\"self-hosted\", \"rust-4c-8gb\"]') }}"
+        jobs = {
+            "route": {"runs-on": "ubuntu-latest"},
+            "bins": {"runs-on": SELF, "needs": "route"},
+            "plugin": {"runs-on": SELF, "needs": "route"},
+            "conf": {"runs-on": reads, "needs": ["route", "bins"]},
+            "gradle": {"runs-on": SELF, "needs": ["route", "bins", "plugin", "conf"]},
+            "gate": {"runs-on": SELF, "if": "always()", "needs": ["conf", "gradle"]},
+        }
+        classes = route.request({"jobs": jobs}, {}, "bins", ["conf", "gradle"])["classes"]
+        self.assertEqual(
+            [(c["key"], c["needs"]) for c in classes],
+            [("conf", []), ("gradle", ["conf"])],
+        )
+
+    def test_only_naming_no_such_job_fails(self):
+        with self.assertRaises(SystemExit):
+            route.request({"jobs": {"ci": {"runs-on": "ubuntu-latest"}}}, {}, "ci", ["nope"])
+
     def test_conditional_job_and_its_dependents_are_left_out(self):
         jobs = {
             "ci": {"runs-on": "ubuntu-latest"},
