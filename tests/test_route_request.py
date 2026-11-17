@@ -82,6 +82,19 @@ class RouteRequestTest(unittest.TestCase):
         jobs = {"route": {"runs-on": "ubuntu-latest"}, "ci": {"runs-on": "ubuntu-latest"}}
         self.assertEqual([c["key"] for c in route.request({"jobs": jobs}, {}, "route")["classes"]], ["ci"])
 
+    def test_a_job_reading_the_answer_needs_the_asking_job_and_is_placed(self):
+        reads = "${{ fromJSON(needs.route.outputs.runs-on).lint || fromJSON('[\"self-hosted\", \"rust-4c-8gb\"]') }}"
+        jobs = {
+            "route": {"runs-on": "ubuntu-latest"},
+            "lint": {"runs-on": reads, "needs": "route"},
+            "gate": {"runs-on": SELF, "needs": ["route", "lint"]},
+        }
+        classes = route.request({"jobs": jobs}, {}, "route")["classes"]
+        self.assertEqual(
+            [(c["key"], c["default"], c["needs"]) for c in classes],
+            [("lint", ["self-hosted", "rust-4c-8gb"], []), ("gate", ["self-hosted", "rust-4c-8gb"], ["lint"])],
+        )
+
     def test_conditional_job_and_its_dependents_are_left_out(self):
         jobs = {
             "ci": {"runs-on": "ubuntu-latest"},
